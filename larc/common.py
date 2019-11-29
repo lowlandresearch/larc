@@ -1,11 +1,10 @@
 import os
-import sys
 import io
 import traceback
 import importlib
 import logging
 from ipaddress import ip_address, ip_interface, ip_network
-from typing import Iterable, Hashable, Union, Sequence
+from typing import Iterable, Hashable, Union, Sequence, Any, Callable
 import csv
 from pathlib import Path
 import builtins
@@ -16,23 +15,30 @@ import random
 import inspect
 import math
 import textwrap
-import tempfile
 from collections import OrderedDict
 from datetime import datetime
+import json
+import tempfile
 
 from multipledispatch import dispatch
+from pyrsistent import pmap, pvector, PVector
+import netifaces
+import jmespath
+import dateutil.parser
 
 try:
-    from cytoolz import curry, pipe, compose, merge, concatv
     from cytoolz.curried import (
+        curry, pipe, compose, merge, concatv,
         map, mapcat, assoc, dissoc, valmap, first, second, last,
         complement, get as _get, concat, filter, do, groupby,
+        partial,
     )
 except ImportError:
-    from toolz import curry, pipe, compose, merge, concatv
     from toolz.curried import (
+        curry, pipe, compose, merge, concatv,
         map, mapcat, assoc, dissoc, valmap, first, second, last,
         complement, get as _get, concat, filter, do, groupby,
+        partial,
     )
 
 log = logging.getLogger('common')
@@ -71,8 +77,6 @@ def do_nothing(value):
 # pyrsistent object functions
 #
 # ----------------------------------------------------------------------
-
-from pyrsistent import pmap, pvector, PVector
 
 def to_pyrsistent(obj):
     '''Convert object to immutable pyrsistent objects
@@ -180,9 +184,6 @@ def mini_tb(levels=3):
 #
 # ----------------------------------------------------------------------
 
-import json
-import jmespath
-
 @curry
 @functools.wraps(json.dumps)
 def json_dumps(*a, **kw):
@@ -210,6 +211,12 @@ def jmes(search, d):
 # Builtin function/object supplements
 #
 # ----------------------------------------------------------------------
+
+@curry
+def cprint(value_func=do_nothing, **print_kw):
+    def do_print(value, **kw):
+        return print(value_func(value), **merge(print_kw, kw))
+    return do_print
 
 @curry
 def max(iterable, **kw):
@@ -274,6 +281,23 @@ def cat_to_set(iterable):
         result.update(iterable_value)
     return result
 
+@curry
+def map_to_set(func: Callable[[Any], Hashable], iterable):
+    '''Map func over iterable, reduce result to set.
+
+    Return value of func needs to be hashable.
+
+    Examples:
+
+    >>> the_set = pipe([(1, 2), (3, 2), (2, 8)], map_to_set(lambda v: v[0]))
+    >>> the_set == {1, 2, 3}
+    True
+    '''
+    result = set()
+    for value in iterable:
+        result.add(func(value))
+    return result
+
 _getattr = builtins.getattr
 @curry
 def deref(attr, obj):
@@ -325,9 +349,12 @@ def walk(path):
     >>> with tempfile.TemporaryDirectory() as temp:
     ...     root = Path(temp)
     ...     Path(root, 'a', 'b').mkdir(parents=True)
+    ...     _ = Path(root, 'a', 'a.txt').write_text('')
+    ...     _ = Path(root, 'a', 'b', 'b.txt').write_text('')
     ...     paths = tuple(walk(root))
-    >>> paths == (root, Path(root, 'a'), Path(root, 'a', 'b'))
+    >>> paths == (Path(root, 'a', 'a.txt'), Path(root, 'a', 'b', 'b.txt'))
     True
+
     '''
     return pipe(
         os.walk(path),
@@ -705,6 +732,39 @@ def vindex(find_func, iterable):
     return index(vcall(find_func), iterable)
 
 @curry
+def seti(index, func, iterable):
+    '''Return copy of iterable with value at index modified by func
+
+    Examples:
+
+    >>> pipe([10, 5, 2], seti(2, lambda v: v**2), list)
+    [10, 5, 4]
+    '''
+    for i, v in enumerate(iterable):
+        if i == index:
+            yield func(v)
+        else:
+            yield v
+seti_t = compose(tuple, seti)
+
+@curry
+def vseti(index, func, iterable):
+    '''Variadict seti: return iterable of seq with value at index modified
+    by func
+
+    Examples:
+
+    >>> pipe(
+    ...   [(10, 1), (5, 2), (2, 3)],
+    ...   vseti(2, lambda v, e: v**e),
+    ...   list
+    ... )
+    [(10, 1), (5, 2), 8]
+    '''
+    return seti(index, vcall(func), iterable)
+vseti_t = compose(tuple, vseti)
+
+@curry
 def callif(if_func, func, value):
     '''Return func(value) only if if_func(value) returns truthy, otherwise
     Null
@@ -831,11 +891,12 @@ def first_true(iterable, *, default=None):
     return Null if default is None else default
 
 @curry
-def get(i, indexable, default=None):
+def getitem(i, indexable, default=None):
+    default = default or Null
     if is_dict(indexable):
         return indexable.get(i, default)
     return _get(i, indexable, default)
-getitem = get
+get = getitem
 
 @curry
 def get_many(keys, indexable, default=None):
@@ -1437,6 +1498,27 @@ def match_d(match: dict, d: dict, *, default=Null):
 #
 # ----------------------------------------------------------------------
 
+def current_ip(ip_version):
+    '''Returns the IP address (for a given version) of the interface where
+    the default gateway is found
+
+    '''
+    return maybe_pipe(
+        netifaces.gateways(),
+        getitem('default'),
+        getitem(ip_version),
+        second,
+        netifaces.ifaddresses,
+        getitem(ip_version),
+        maybe_first,
+        lambda d: ip_interface(
+            f'{d["addr"]}/{get_slash_from_mask(d["netmask"])}'
+        )
+    )
+
+current_ipv4 = partial(current_ip, netifaces.AF_INET)
+current_ipv6 = partial(current_ip, netifaces.AF_INET6)
+
 def is_ipv4(ip: (str, int)):
     try:
         return ip_address(ip).version == 4
@@ -1464,8 +1546,14 @@ def is_network(inet):
     except ValueError:
         return False
 
-def get_slash(inet):
+def get_slash(inet: Union[str, ip_network]):
     return 32 - int(math.log2(ip_network(inet).num_addresses))
+
+def get_slash_from_mask(mask: str):
+    addr = ip_interface(mask).ip
+    max_slash = 32 if addr.version == 4 else 128
+    max_int = 2**32 if addr.version == 4 else 2**128
+    return max_slash - int(math.log2(max_int - int(addr)))
 
 def is_comma_sep_ip(cs_ip):
     return ',' in cs_ip and all(is_ip(v) for v in cs_ip.split(','))
@@ -1512,7 +1600,7 @@ def get_ips_from_lines(lines):
     return pipe(
         lines,
         strip_comments,
-        filter(lambda l: l.strip()),
+        filter(strip),
         mapcat(ip_re.findall),
         # filter(is_ip),
         # mapcat(ip_to_seq),
@@ -1526,9 +1614,25 @@ def in_ip_range(ip0, ip1, ip):
     return int(ip_address(ip)) in range(start, stop + 1)
 
 def zpad(ip):
+    '''Zero-pad an IP address
+
+    Examples:
+    
+    >>> zpad('1.2.3.4')
+    '001.002.003.004'
+
+    '''
     return '.'.join(s.zfill(3) for s in str(ip).strip().split('.'))
 
 def unzpad(ip):
+    '''Remove zero-padding from an IP address
+
+    Examples:
+    
+    >>> unzpad('001.002.003.004')
+    '1.2.3.4'
+
+    '''
     return pipe(ip.split('.'), map(int), map(str), '.'.join)
 
 
@@ -1550,9 +1654,6 @@ def to_str(content, encoding='utf-8'):
 
 def is_dict(d):
     return isinstance(d, collections.abc.Mapping)
-    # if isinstance(d, (dict, PMap, CommentedMap, OrderedDict)):
-    #     return True
-    # return False
 is_not_dict = complement(is_dict)
 
 def is_indexable(s):
@@ -1562,12 +1663,17 @@ def is_seq(s):
     return (isinstance(s, collections.abc.Iterable) and not
             is_dict(s) and not
             isinstance(s, (str, bytes)))
-    # if isinstance(s, (list, tuple, PVector, CommentedSeq)):
-    #     return True
-    # return False
 is_not_seq = complement(is_seq)
 
-def flatdict(obj, keys=()):
+def flatdict(obj: Union[dict, Any], keys=()):
+    '''Flatten a Python dictionary such that nested values are returned
+    with the key sequence required to access them.
+
+    Examples:
+
+    >>> pipe({'a': {'b': [1, 2, 3]}, 'c': 2}, flatdict, list)
+    [('a', 'b', [1, 2, 3]), ('c', 2)]
+    '''
     if is_dict(obj):
         for k, v in obj.items():
             yield from flatdict(v, keys + (k, ))
@@ -1580,8 +1686,6 @@ def flatdict(obj, keys=()):
 # Time-oriented functions
 #
 # ----------------------------------------------------------------------
-
-import dateutil.parser
 
 def ctime(path: Union[str, Path]):
     return Path(path).stat().st_ctime
@@ -1657,26 +1761,6 @@ def function_from_path(func_path: str):
     )
 
 
-SAM_RE = re.compile(
-    r'^(.*?):\d+:(\w+:\w+):::$', re.M,
-)
-def get_sam_hashes(content):
-    return pipe(
-        content,
-        to_str,
-        SAM_RE.findall,
-    )
-
-MSCACHE_RE = re.compile(
-    r'^(.+?)/(.+?):(\$.*?\$.*?#.*?#.*?)$', re.M,
-)
-def get_mscache_hashes(content):
-    return pipe(
-        content,
-        to_str,
-        MSCACHE_RE.findall,
-    )
-
 def strip(content):
     return content.strip()
 
@@ -1731,15 +1815,6 @@ def output_rows_to_clipboard(rows):
         '\n'.join,
         clipboard_copy,
     )
-
-def get_content(inpath, clipboard=False):
-    if inpath:
-        content = Path(inpath).read_text()
-    elif clipboard:
-        content = clipboard_paste()
-    else:
-        content = sys.stdin.read()
-    return content
 
 def difflines(A, B):
     linesA = pipe(
@@ -1838,27 +1913,6 @@ def regex_transform(regexes, text):
     for regex, replace in regexes:
         text = regex.sub(replace, text)
     return text
-
-@curry
-def seti(index, func, iterable):
-    '''Return copy of iterable with value at index modified by func
-
-    '''
-    for i, v in enumerate(iterable):
-        if i == index:
-            yield func(v)
-        else:
-            yield v
-seti_t = compose(tuple, seti)
-
-@curry
-def vseti(index, func, iterable):
-    '''Variadict seti: return iterable of seq with value at index modified
-    by func
-
-    '''
-    return seti(index, vcall(func), iterable)
-vseti_t = compose(tuple, vseti)
 
 @curry
 def from_edgelist(edgelist, factory=None):

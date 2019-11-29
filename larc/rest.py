@@ -9,9 +9,8 @@ from toolz.curried import (
 )
 from pyrsistent import pmap
 
-from larcutils.common import (
-    maybe_pipe, vmap, maybe_first, do_nothing,
-    is_dict, vcall, Null,
+from .common import (
+    maybe_pipe, vmap, maybe_first, do_nothing, is_dict, vcall, Null,
 )
 
 log = logging.getLogger(__name__)

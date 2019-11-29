@@ -19,7 +19,7 @@ def meta_and_content(lines: list) -> Tuple[list]:
     ... a: 1
     ... b: 2
     ... ---
-    ... Some markdown
+    ... Some **markdown**
     ... """.splitlines())
     (['a: 1', 'b: 2'], ['Some **markdown**'])
 
