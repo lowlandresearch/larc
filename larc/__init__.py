@@ -1,3 +1,3 @@
 from . import common, parallel, yaml, logging, rest, shell, markdown
 
-__version__ = '0.0.9'
+__version__ = '0.0.13'
