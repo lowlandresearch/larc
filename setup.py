@@ -1,11 +1,16 @@
+import re
 from pathlib import Path
 
 from setuptools import setup, find_packages
 
 HERE = Path(__file__).resolve().parent
 
+version_re = re.compile(r"^__version__\s*=\s*'(?P<version>.*)'$", re.M)
 def version():
-    return Path(HERE, 'VERSION').read_text().strip()
+    match = version_re.search(Path('larc/__init__.py').read_text())
+    if match:
+        return match.groupdict()['version'].strip()
+    return '0.0.1'
 
 long_description = Path(HERE, 'README.md').resolve().read_text()
 
@@ -25,7 +30,6 @@ setup(
         'networkx',
         'coloredlogs',
         'gevent',
-        'pyyaml',
         'ruamel.yaml',
         'ipython',
         'click',
@@ -76,6 +80,9 @@ setup(
             'intlines=larc.cli.text:int_lines',
             'sortips=larc.cli.ips:sort_ips',
             'getips=larc.cli.ips:get_ips',
+            'getsubnets=larc.cli.ips:get_subnets',
+            'zpad=larc.cli.ips:zpad_ips',
+            'unzpad=larc.cli.ips:unzpad_ips',
         ],
     },
 )
