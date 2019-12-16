@@ -4,7 +4,6 @@ pyrsistent
 networkx
 coloredlogs
 gevent
-pyyaml
 ruamel.yaml
 ipython
 click
