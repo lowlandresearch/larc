@@ -40,3 +40,17 @@ The `larc` library provides a number of utilities:
   designed for use within the `toolz`-ish functional idiom
 - `larc.signature`: Functions to construct a host signature, for use
   when "fingerprinting" clients is necessary
+- `larc.shell`: Shell command functions
+
+The library also provides the following command-line tools:
+
+- `diffips`: Given two files with IPs (A and B), get difference A - B
+- `intips`: Given two files with IPs (A and B), get intersection A & B
+- `difflines`: Given two files with lines of text (A and B), get
+  difference A - B
+- `intlines`: Given two files with lines of text (A and B), get
+  intersection A & B
+- `sortips`: Given text content (from clipboard, file, or stdin),
+  extract IPs sort them
+- `getips`: Given text content (from clipboard, file, or stdin),
+  extract IPs and print them
