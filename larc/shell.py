@@ -1,4 +1,5 @@
 import os
+import sys
 import subprocess
 import shlex
 import logging
@@ -17,7 +18,8 @@ log.addHandler(logging.NullHandler())
 
 @curry
 def shell_iter(command, *, echo: bool = True,
-               echo_func: Callable[[Any], None] = cprint(end=''),
+               echo_func: Callable[[Any], None] = cprint(file=sys.stderr,
+                                                         end=''),
                timeout: int = None, **popen_kw):
     '''Execute a shell command, yield lines of output as they come
     possibly echoing command output to a given echo_func, and finally
@@ -27,7 +29,7 @@ def shell_iter(command, *, echo: bool = True,
     it runs. When the process terminates, it will then yield the
     remainer of output, then finally the integer status code. It can
     also be terminated early via a timeout parameter. By default, the
-    command will also echo to stdout.
+    command will also echo to stderr.
 
     Args:
 
@@ -85,7 +87,7 @@ def shell_iter(command, *, echo: bool = True,
     '''
     popen_kw = merge({
         'stdout': subprocess.PIPE,
-        'stderr': subprocess.STDOUT,
+        'stderr': subprocess.PIPE,
     }, popen_kw)
 
     command_split = pipe(
@@ -109,7 +111,7 @@ def shell_iter(command, *, echo: bool = True,
 
     line = ''
     while process_running():
-        char = process.stdout.read(1).decode('utf-8')
+        char = process.stdout.read(1).decode('utf-8', errors='ignore')
         if char:
             echo_func(char) if echo else ''
             if char == '\n':
@@ -118,7 +120,9 @@ def shell_iter(command, *, echo: bool = True,
             else:
                 line += char
 
-    rest = process.stdout.read().decode('utf-8')
+    if timeout:
+        timer.cancel()
+    rest = process.stdout.read().decode('utf-8', errors='ignore')
     for char in rest:
         echo_func(char) if echo else ''
         if char == '\n':
