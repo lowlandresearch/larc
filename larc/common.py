@@ -4,7 +4,9 @@ import traceback
 import importlib
 import logging
 from ipaddress import ip_address, ip_interface, ip_network
-from typing import Iterable, Hashable, Union, Sequence, Any, Callable
+from typing import (
+    Iterable, Hashable, Union, Sequence, Any, Callable, Tuple,
+)
 import csv
 from pathlib import Path
 import builtins
@@ -15,30 +17,35 @@ import random
 import inspect
 import math
 import textwrap
+import collections.abc
 from collections import OrderedDict
 from datetime import datetime
 import json
-import tempfile
+import tempfile                 # noqa: for doctest
+import base64
+import urllib
+import string
 
 from multipledispatch import dispatch
 from pyrsistent import pmap, pvector, PVector
 import netifaces
 import jmespath
 import dateutil.parser
+import requests
 
 try:
     from cytoolz.curried import (
         curry, pipe, compose, merge, concatv,
         map, mapcat, assoc, dissoc, valmap, first, second, last,
         complement, get as _get, concat, filter, do, groupby,
-        partial,
+        partial, juxt,
     )
 except ImportError:
     from toolz.curried import (
         curry, pipe, compose, merge, concatv,
         map, mapcat, assoc, dissoc, valmap, first, second, last,
         complement, get as _get, concat, filter, do, groupby,
-        partial,
+        partial, juxt,
     )
 
 log = logging.getLogger('common')
@@ -59,6 +66,9 @@ def log_lines(log_function, lines):
         map(log_function),
     )
 
+def lines(path: Union[str, Path]):
+    return Path(path).expanduser().read_text().splitlines()
+
 def do_nothing(value):
     '''Yes, we have no banana pudding.
 
@@ -71,6 +81,77 @@ def do_nothing(value):
     '''
     return value
 
+def b64decode(content: Union[bytes, str]):
+    return base64.b64decode(
+        to_bytes(content) + b'=' * (len(content) % 4)
+    )
+
+def b64encode(content: Union[bytes, str]):
+    return pipe(
+        content,
+        to_bytes,
+        base64.b64encode,
+    )
+    
+# ----------------------------------------------------------------------
+#
+# Random content creation functions
+#
+# ----------------------------------------------------------------------
+
+def random_str(n=8, *, rng=None):
+    rng = rng or random
+    return ''.join(rng.sample(string.ascii_lowercase, n))
+
+def random_sentence(w=10, *, rng=None):
+    rng = rng or random
+    return pipe(
+        [random_str(rng.randrange(4, 10), rng=rng) for i in range(w)],
+        lambda s: [s[0].capitalize()] + s[1:],
+        ' '.join,
+        lambda s: s + '.'
+    )
+
+def random_user(n=8, *, rng=None):
+    rng = rng or random
+    return ''.join(rng.sample(string.ascii_lowercase, n))
+
+def random_pw(n=16, *, rng=None):
+    rng = rng or random
+    return ''.join(rng.sample(string.printable[:64], n))
+
+@curry
+def random_sample(N, seq, *, rng=None):
+    rng = rng or random
+    return rng.sample(tuple(seq), N)
+
+
+# ----------------------------------------------------------------------
+#
+# HTTP functions
+#
+# ----------------------------------------------------------------------
+
+def url(*parts):
+    base, *path = pipe(parts, map(str))
+    return urllib.parse.urljoin(
+        base, '/'.join(path),
+        # base, Path(*path).as_posix(),
+    )
+
+def session_with_cookies(cookies: Tuple[dict]):
+    session = requests.Session()
+    for cookie_dict in cookies:
+        session.cookies.set_cookie(
+            requests.cookies.create_cookie(**cookie_dict)
+        )
+    return session
+
+def valid_response(response: requests.Response):
+    return response.status_code in range(200, 300)
+
+def valid_content(response: requests.Response):
+    return response.content if valid_response(response) else Null
 
 # ----------------------------------------------------------------------
 #
@@ -184,10 +265,21 @@ def mini_tb(levels=3):
 #
 # ----------------------------------------------------------------------
 
+def maybe_json(response: requests.Response):
+    try:
+        return response.json()
+    except ValueError:
+        return Null
+
 @curry
 @functools.wraps(json.dumps)
 def json_dumps(*a, **kw):
     return json.dumps(*a, **kw)
+
+@curry
+@functools.wraps(json.loads)
+def json_loads(*a, **kw):
+    return json.loads(*a, **kw)
 
 @curry
 def jmes(search, d):
@@ -417,8 +509,33 @@ def csv_rows_from_path(path: Union[str, Path], *, header=True,
 csv_rows = csv_rows_from_path
 
 @curry
-def csv_rows_from_content(content, *, header=True, columns=None, **kw):
-    '''Load CSV rows from content (e.g. str)
+def csv_rows_from_content(content: Union[str, bytes], *,
+                          header=True, columns=None, **kw):
+    r'''Load CSV rows from content (e.g. str or bytes)
+
+    Args:
+      content (str): string content
+
+    Examples:
+    
+    >>> pipe(csv_rows_from_content('c1,c2,c3\n1,2,3'), list)
+    [OrderedDict([('c1', '1'), ('c2', '2'), ('c3', '3')])]
+
+    If header is False, then rows will be returned as lists.
+    
+    >>> pipe(csv_rows_from_content('1,2,3\n4,5,6', header=False), list)
+    [['1', '2', '3'], ['4', '5', '6']]
+
+    >>> pipe(csv_rows_from_content(
+    ...   '1,2,3', header=False, columns=['c1', 'c2', 'c3']
+    ... ), list)
+    [OrderedDict([('c1', '1'), ('c2', '2'), ('c3', '3')])]
+
+    If header is False and header row exists, the header row will be
+    interpreted as a regular row.
+    
+    >>> pipe(csv_rows_from_content('c1,c2,c3\n1,2,3', header=False), list)
+    [['c1', 'c2', 'c3'], ['1', '2', '3']]
 
     '''
     return csv_rows_from_fp(
@@ -587,6 +704,10 @@ def csv_rows_to_path(path: Union[str, Path],
     '''Save CSV rows to file system path
 
     '''
+    with Path(path).expanduser().open('w') as wfp:
+        return csv_rows_to_fp(
+            wfp, rows, header=header, columns=columns, **writer_kw
+        )
 
 @curry
 def csv_rows_to_content(rows: Iterable[Union[dict, Sequence[str]]], *,
@@ -596,7 +717,11 @@ def csv_rows_to_content(rows: Iterable[Union[dict, Sequence[str]]], *,
     '''Save CSV rows to a string
 
     '''
-
+    buf = io.StringIO()
+    csv_rows_to_fp(
+        buf, rows, header=header, columns=columns, **writer_kw
+    )
+    return buf.getvalue()
 
 # ----------------------------------------------------------------------
 #
@@ -845,6 +970,25 @@ def vmapif(func, seq):
     return seq
 
 @curry
+def groupdicts(regex, iterable, **kw):
+    regex = regex if isinstance(regex, re.Pattern) else re.compile(regex, **kw)
+    return pipe(
+        iterable,
+        map(regex.search),
+        filter(None),
+        map(lambda m: m.groupdict()),
+    )
+
+@curry
+def groupdicts_from_regexes(regexes: Sequence[re.Pattern],
+                            iterable: Iterable[str], **kw):
+    return pipe(
+        iterable,
+        juxt(*[compose(list, groupdicts(r)) for r in regexes]),
+        concat,
+    )
+
+@curry
 def grep(raw_regex, iterable, **kw):
     regex = re.compile(raw_regex, **kw)
     return filter(lambda s: regex.search(s), iterable)
@@ -876,10 +1020,6 @@ def shuffled(seq):
     tup = tuple(seq)
     return random.sample(tup, len(tup))
 
-@curry
-def random_sample(N, seq):
-    return random.sample(tuple(seq), N)
-
 def first_true(iterable, *, default=None):
     '''Return the first truthy thing in iterable. If none are true, return
     default=Null.
@@ -910,6 +1050,14 @@ def get_many(keys, indexable, default=None):
     for k in keys:
         yield get(k, indexable, default=default)
 getmany = get_many
+
+@curry 
+def get_many_t(keys, indexable, default=None):
+    return pipe(
+        get_many(keys, indexable, default=default),
+        tuple,
+    )
+getmany_t = get_many_t
 
 # ----------------------------------------------------------------------
 #
@@ -1398,7 +1546,7 @@ def merge_keys(from_: Iterable[Hashable], to: Hashable, value_function, d):
 
 @curry
 def replace_key(k1, k2, value_function, d):
-    '''Drop key k1 and replace with k2
+    '''Drop key k1 and replace with k2 if k1 exists
 
     Args:
       k1 (Hashable): key to drop
@@ -1421,7 +1569,16 @@ def replace_key(k1, k2, value_function, d):
     {'c': 3}
 
     '''
-    return merge_keys([k1], k2, value_function, d)
+    if k1 in d:
+        return merge_keys([k1], k2, value_function or getitem(k1), d)
+    return d
+switch_keys = replace_key
+# @curry
+# def switch_keys(k1, k2, value_function, d):
+#     return pipe(
+#         assoc(d, k2, value_function(d)),
+#         drop_key(k1)
+#     )
 
 @curry
 def valmaprec(func, d, **kw):
@@ -1490,6 +1647,19 @@ def match_d(match: dict, d: dict, *, default=Null):
                 for k in match
             ))
     return default
+
+@curry
+def bakedict(key_f, value_f, iterable):
+    new = {}
+    for v in iterable:
+        key = key_f(v)
+        values = new.setdefault(key, [])
+        values.append(value_f(v))
+    return new
+
+@curry
+def vbakedict(key_f, value_f, iterable):
+    return bakedict(vcall(key_f), vcall(value_f), iterable)
 
 
 # ----------------------------------------------------------------------
@@ -1587,23 +1757,45 @@ def ip_to_seq(ip):
         log.error(f'Unknown/unparsable ip value: {ip}')
         return []
 
+def ip_tuple(ip):
+    return pipe(str(ip).split('.'), map(int), tuple)
+
 def sortips(ips):
     return sort_by(compose(ip_address, strip, strip_comments), ips)
+sort_ips = sortips
 
 def get_ips_from_file(path):
-    return get_ips_from_str(Path(path).read_text())
+    return get_ips_from_content(Path(path).read_text())
 
-def get_ips_from_str(content):
+def get_ips_from_content(content):
     return get_ips_from_lines(content.splitlines())
+get_ips_from_str = get_ips_from_content
 
 def get_ips_from_lines(lines):
     return pipe(
         lines,
+        map(to_str),
         strip_comments,
         filter(strip),
         mapcat(ip_re.findall),
         # filter(is_ip),
         # mapcat(ip_to_seq),
+        tuple,
+    )
+
+def get_networks_from_file(path):
+    return get_networks_from_content(Path(path).expanduser().read_text())
+
+def get_networks_from_content(content):
+    return get_networks_from_lines(content.splitlines())
+
+def get_networks_from_lines(lines):
+    return pipe(
+        lines,
+        map(to_str),
+        strip_comments,
+        filter(strip),
+        filter(is_network),
         tuple,
     )
 
@@ -1646,11 +1838,19 @@ def is_str(v):
     return isinstance(v, str)
 is_not_string = complement(is_str)
 
-def to_str(content, encoding='utf-8'):
+def to_str(content, encoding='utf-8', errors='ignore'):
     if type(content) is bytes:
-        return content.decode(encoding)
+        return content.decode(encoding, errors)
     else:
         return str(content)
+
+def to_bytes(content, encoding='utf-8', errors='ignore'):
+    if type(content) is str:
+        return content.encode(encoding, errors)
+    elif type(content) is bytes:
+        return content
+    else:
+        return str(content).encode(encoding, errors)
 
 def is_dict(d):
     return isinstance(d, collections.abc.Mapping)
@@ -1768,7 +1968,7 @@ def strip(content):
 def strip_comments(line):
     return line[:line.index('#')] if '#' in line else line
     
-@dispatch((list, tuple, PVector))  # noqa
+@dispatch((collections.abc.Iterable, list, tuple, PVector))  # noqa
 def strip_comments(lines):
     return pipe(
         lines,
@@ -1783,7 +1983,7 @@ def remove_comments(lines):
     )
 
 def help_text(s):
-    return textwrap.dedent(s)
+    return textwrap.shorten(s, 1e300)
 
 def clipboard_copy(content):
     import pyperclip
