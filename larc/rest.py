@@ -1,6 +1,7 @@
 import urllib
 import functools
 import logging
+import pprint
 from typing import Callable, List
 
 import requests
@@ -178,12 +179,17 @@ def empty_dict(*a, **kw):
 
 class IdResourceEndpoint(Endpoint):
     def __init__(self, parent: Endpoint, data: dict, form_key: str,
-                 id_key: str, meta_f: Callable[[dict], dict] = empty_dict):
+                 id_key: str,
+                 meta_f: Callable[[dict], dict] = empty_dict,
+                 unpack_f: Callable[[dict], dict] = do_nothing,
+                 single_unpack_f: Callable[[dict], dict] = do_nothing):
         self.parent = parent
         self.data = merge(data, {'metadata': meta_f(data)})
         self.form_key = form_key
         self.id_key = id_key
         self.meta_f = meta_f
+        self.unpack_f = unpack_f
+        self.single_unpack_f = single_unpack_f
 
         if id_key not in data:
             log.error(f'ID key {id_key} not in data: {data}')
@@ -196,9 +202,11 @@ class IdResourceEndpoint(Endpoint):
                                response: requests.Response, *,
                                form_key=None, id_key='id',
                                meta_f=empty_dict,
-                               unpack_f=do_nothing):
+                               unpack_f=do_nothing,
+                               single_unpack_f=do_nothing):
         for d in unpack_f(response.json()):
-            yield cls(parent, d, form_key, id_key, meta_f=meta_f)
+            yield cls(parent, d, form_key, id_key, meta_f=meta_f,
+                      unpack_f=unpack_f, single_unpack_f=single_unpack_f)
 
     @classmethod
     @curry
@@ -206,23 +214,43 @@ class IdResourceEndpoint(Endpoint):
                              response: requests.Response, *,
                              form_key=None, id_key='id',
                              meta_f=do_nothing,
-                             unpack_f=do_nothing):
+                             unpack_f=do_nothing,
+                             single_unpack_f=do_nothing):
         data = unpack_f(response.json())
-        return cls(parent, data, form_key, id_key, meta_f=meta_f)
+        return cls(parent, data, form_key, id_key, meta_f=meta_f,
+                   unpack_f=unpack_f, single_unpack_f=single_unpack_f)
 
     def refresh(self, **get_kw):
         return IdResourceEndpoint(
-            self.parent, self.get(**get_kw).json(),
+            self.parent, self.single_unpack_f(self.get(**get_kw).json()),
             self.form_key, self.id_key, meta_f=self.meta_f,
+            unpack_f=self.unpack_f, single_unpack_f=self.single_unpack_f,
         )
 
 @curry
 def update_endpoint(endpoint: IdResourceEndpoint, update: dict, *,
+                    body_transform=do_nothing,
                     get_kw=None, do_refresh=True):
-    endpoint.put(json=({endpoint.form_key: update}
-                       if endpoint.form_key is not None else update))
-    if do_refresh:
-        return endpoint.refresh(**(get_kw or {}))
+    update = dict(body_transform(update))
+    response = endpoint.put(
+        json=({endpoint.form_key: update}
+              if endpoint.form_key is not None else update)
+    )
+
+    if response.status_code in range(200, 300):
+        if do_refresh:
+            return endpoint.refresh(**(get_kw or {}))
+        return endpoint
+
+    log.error(
+        f'There was an error after updating endpoint {endpoint.url}:\n'
+        '\n'
+        f'Update dict: \n{pprint.pformat(update)}\n'
+        '\n'
+        'Response:\n'
+        f'{response.content[:1000]}'
+    )
+    return endpoint
 
 
 # ----------------------------------------------------------------------
@@ -283,15 +311,16 @@ def reset_cache_for_endpoint_by_resource_name(parent_endpoint: Endpoint,
 
 def get_id_resource(resource_name: str, *,
                     form_key: str = None,
-                    id_key: str = 'id', unpack_f=do_nothing,
-                    meta_f=empty_dict, help=None, **iter_kw):
+                    id_key: str = 'id', meta_f=empty_dict,
+                    unpack_f=do_nothing, single_unpack_f=do_nothing,
+                    help=None, **iter_kw):
     def getter(parent_endpoint: IdResourceEndpoint, id: (int, str), **get_kw):
         return pipe(
             parent_endpoint(resource_name, id).get(**get_kw),
             IdResourceEndpoint.from_single_response(
                 parent_endpoint,
                 form_key=form_key, id_key=id_key, unpack_f=unpack_f,
-                meta_f=meta_f,
+                meta_f=meta_f, single_unpack_f=single_unpack_f,
             )
         )
     getter.__doc__ = help or ''
@@ -299,9 +328,9 @@ def get_id_resource(resource_name: str, *,
     return getter
 
 def get_id_resources(resource_name: str, *, form_key: str = None,
-                     id_key: str = 'id',
-                     unpack_f=do_nothing, help=None, memo=False,
-                     meta_f=empty_dict, **iter_kw):
+                     id_key: str = 'id', meta_f=empty_dict,
+                     unpack_f=do_nothing, single_unpack_f=do_nothing,
+                     help=None, memo=False, **iter_kw):
     def getter(parent_endpoint: IdResourceEndpoint, *, do_memo=True):
         if (memo and do_memo) and cache_has_key(parent_endpoint,
                                                 resource_name):
@@ -313,7 +342,8 @@ def get_id_resources(resource_name: str, *, form_key: str = None,
                     {'iter_f': compose(
                         IdResourceEndpoint.from_multiple_response(
                             form_key=form_key, id_key=id_key,
-                            unpack_f=unpack_f, meta_f=meta_f,
+                            meta_f=meta_f, unpack_f=unpack_f,
+                            single_unpack_f=single_unpack_f,
                         ),
                     )},
                     iter_kw
@@ -337,14 +367,18 @@ def get_id_resources(resource_name: str, *, form_key: str = None,
 def new_id_resource(resource_name: str, *,
                     form_key: str = None, id_key: str = 'id',
                     get_kw=None, help: str = None, memo=False,
-                    meta_f=empty_dict, body_transform=do_nothing):
+                    meta_f=empty_dict, unpack_f=do_nothing,
+                    single_unpack_f=do_nothing,
+                    post_unpack_f=do_nothing,
+                    body_transform=do_nothing):
     def creator(parent_endpoint: Endpoint, body: dict):
         body = dict(body_transform(body))
         body = {form_key: body} if form_key is not None else body
         log.debug(f'Request body: {body}')
         response = parent_endpoint(resource_name).post(json=body)
+
         if response.status_code in range(200, 300):
-            post_data = response.json()
+            post_data = post_unpack_f(response.json())
             new_response = parent_endpoint(
                 resource_name, post_data[id_key]
             ).get(**(get_kw or {}))
@@ -355,7 +389,9 @@ def new_id_resource(resource_name: str, *,
                     new_response.json(),
                     form_key=form_key, id_key=id_key,
                     meta_f=meta_f,
+                    unpack_f=unpack_f, single_unpack_f=single_unpack_f,
                 )
+
             log.error(
                 f'There was an error after creating {resource_name} object:\n'
                 f'  body: {body}\n'
@@ -364,6 +400,7 @@ def new_id_resource(resource_name: str, *,
                 'Response:\n'
                 f'{new_response.content[:1000]}'
             )
+
         log.error(
             f'There was an error creating {resource_name} object:\n'
             f'  body: {body}\n'

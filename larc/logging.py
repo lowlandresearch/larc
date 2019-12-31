@@ -1,12 +1,16 @@
-import logging
 import coloredlogs
+from toolz import merge
 
-def setup_logging(loglevel: str):
-    level = logging.getLevelName(loglevel.upper())
+def setup_logging(loglevel: str, **config_kw):
     fmt = (
-        '{asctime} {levelname: <8} [{name}]:{lineno: >4}: {message}'
+        '{asctime} {levelname: <6} [{name}:{lineno: >4}]  {message}'
     )
     datefmt = '%Y-%m-%d %H:%M:%S'
-    coloredlogs.install(level=level)
-    logging.basicConfig(level=level, datefmt=datefmt, format=fmt, style='{')
+    kw = merge({
+        'level': loglevel.upper(),
+        'datefmt': datefmt,
+        'fmt': fmt,
+        'style': '{',
+    }, config_kw)
+    coloredlogs.install(**kw)
 

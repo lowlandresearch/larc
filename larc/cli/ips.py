@@ -11,11 +11,12 @@ from toolz.curried import (
 from ..common import (
     is_ip, strip_comments, strip, sortips,
     get_ips_from_file, get_ips_from_str, do_nothing,
-    clipboard_copy,
+    clipboard_copy, zpad, unzpad,
 )
 from .common import (
     get_input_content
 )
+from ..yaml import dump as dump_yaml
 
 cb_copy_ensure_nl = compose(
     clipboard_copy,
@@ -117,7 +118,11 @@ def sort_ips(inpath, keepcomments, clipboard):
     '-C', '--to-clipboard', is_flag=True,
     help=('Send sorted to clipboard'),
 )
-def subnets(inpath, slash, from_clipboard, to_clipboard):
+@click.option(
+    '--yaml', is_flag=True,
+    help='Output should be in yaml form'
+)
+def get_subnets(inpath, slash, from_clipboard, to_clipboard, yaml):
     ''''Given a list of IP addresses from a file path (INPATH), the
     clipboard (-C), or stdin (if nothing provided), print in sorted
     order (to stdout unless -C is provided) all the IP networks of a
@@ -135,7 +140,7 @@ def subnets(inpath, slash, from_clipboard, to_clipboard):
         set,
         sorted,
         map(str),
-        '\n'.join,
+        compose(dump_yaml, list) if yaml else '\n'.join,
         print if not to_clipboard else cb_copy_ensure_nl,
     )
 
@@ -178,6 +183,95 @@ def get_ips(inpath, from_clipboard, to_clipboard, stdout, no_sort, unique):
         get_ips_from_str(content),
         set if unique else do_nothing,
         do_nothing if no_sort else sortips,
+        '\n'.join,
+        print if stdout or not to_clipboard else cb_copy_ensure_nl,
+    )
+
+
+@click.command()
+@click.argument(
+    'inpath',
+    required=False,
+    type=click.Path(exists=True),
+)
+@click.option(
+    '-c', '--from-clipboard', is_flag=True,
+    help=('Get IPs from clipboard'),
+)
+@click.option(
+    '-C', '--to-clipboard', is_flag=True,
+    help=('Send sorted to clipboard'),
+)
+@click.option(
+    '--stdout', is_flag=True,
+    help='Force output to stdout',
+)
+@click.option(
+    '--no-sort', is_flag=True,
+    help='Keep IPs unsorted',
+)
+@click.option(
+    '-u', '--unique', is_flag=True,
+    help='Print only unique IPs',
+)
+def zpad_ips(inpath, from_clipboard, to_clipboard, stdout, no_sort, unique):
+    '''Given a text block containing IPs from a file path (INPATH), the
+    clipboard (-c), or stdin if nothing provided, print in sorted
+    order (to stdout unless -C is provided) all the IPs with octets
+    padded with zeros.
+
+    '''
+    content = get_input_content(inpath, from_clipboard)
+            
+    return pipe(
+        get_ips_from_str(content),
+        set if unique else do_nothing,
+        do_nothing if no_sort else sortips,
+        map(zpad),
+        '\n'.join,
+        print if stdout or not to_clipboard else cb_copy_ensure_nl,
+    )
+
+@click.command()
+@click.argument(
+    'inpath',
+    required=False,
+    type=click.Path(exists=True),
+)
+@click.option(
+    '-c', '--from-clipboard', is_flag=True,
+    help=('Get IPs from clipboard'),
+)
+@click.option(
+    '-C', '--to-clipboard', is_flag=True,
+    help=('Send sorted to clipboard'),
+)
+@click.option(
+    '--stdout', is_flag=True,
+    help='Force output to stdout',
+)
+@click.option(
+    '--no-sort', is_flag=True,
+    help='Keep IPs unsorted',
+)
+@click.option(
+    '-u', '--unique', is_flag=True,
+    help='Print only unique IPs',
+)
+def unzpad_ips(inpath, from_clipboard, to_clipboard, stdout, no_sort, unique):
+    '''Given a text block containing IPs from a file path (INPATH), the
+    clipboard (-c), or stdin if nothing provided, print in sorted
+    order (to stdout unless -C is provided) all the zero-padded IPs
+    formatted as normal IPs.
+
+    '''
+    content = get_input_content(inpath, from_clipboard)
+            
+    return pipe(
+        get_ips_from_str(content),
+        set if unique else do_nothing,
+        do_nothing if no_sort else sortips,
+        map(unzpad),
         '\n'.join,
         print if stdout or not to_clipboard else cb_copy_ensure_nl,
     )
