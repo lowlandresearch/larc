@@ -1985,6 +1985,12 @@ def remove_comments(lines):
 def help_text(s):
     return textwrap.shorten(s, 1e300)
 
+def wrap_text(text, width):
+    return pipe(
+        textwrap.wrap(text, width),
+        '\n'.join,
+    )
+
 def clipboard_copy(content):
     import pyperclip
     pyperclip.copy(content)
@@ -2073,7 +2079,7 @@ def arg_intersection(func, kw):
     else:
         return {k: kw[k] for k in set(params) & set(kw)}
 
-def positional_only_args(func):
+def positional_args(func):
     return pipe(
         inspect.signature(func).parameters.values(),
         filter(
@@ -2085,6 +2091,8 @@ def positional_only_args(func):
         map(lambda p: p.name),
         tuple,
     )
+# This might need to change in Python 3.8 with actual pos-only args
+positional_only_args = positional_args
 
 def is_arg_superset(kwargs, func):
     '''Does the kwargs dictionary contain the func's required params?
