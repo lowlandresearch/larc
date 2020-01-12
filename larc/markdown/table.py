@@ -4,12 +4,11 @@ import logging
 from markdown import Extension
 from markdown.preprocessors import Preprocessor
 from toolz.curried import (
-    pipe, compose, curry, complement, juxt, merge,
-    interleave, partition, reduce, map, do, filter,
+    pipe, curry, merge, map, filter,
 )
 
 from ..common import (
-    vmap, vfilter, vcall, maybe_pipe,
+    vmap, vfilter,
 )
 from .. import yaml
 
