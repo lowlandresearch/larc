@@ -2,20 +2,20 @@ from typing import Tuple
 import logging
 
 import markdown
-from toolz.curried import merge
+from toolz.curried import merge, pipe
 
 from .. import yaml
 
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
 
-def meta_and_content(lines: list) -> Tuple[list]:
+def meta_and_content_as_lines(lines: list) -> Tuple[list, list]:
     '''Split markdown content lines into metadata lines and markdown
     content lines
 
     Example:
 
-    >>> meta_and_content("""---
+    >>> meta_and_content_as_lines("""---
     ... a: 1
     ... b: 2
     ... ---
@@ -36,6 +36,17 @@ def meta_and_content(lines: list) -> Tuple[list]:
     index = stripped[1:].index('---') + 1
     return lines[1:index], lines[index + 1:]
 
+def meta_and_content(content: str) -> Tuple[dict, str]:
+    meta_lines, lines = pipe(
+        content.splitlines(),
+        meta_and_content_as_lines,
+    )
+
+    meta = yaml.load('\n'.join(meta_lines)) if meta_lines else {}
+
+    return meta, '\n'.join(lines)
+    
+
 class MetaYamlPreprocessor(markdown.preprocessors.Preprocessor):
     """Preprocess markdown content with YAML metadata parsing.
 
@@ -44,7 +55,7 @@ class MetaYamlPreprocessor(markdown.preprocessors.Preprocessor):
     """
 
     def run(self, lines: list) -> list:
-        meta_lines, lines = meta_and_content(lines)
+        meta_lines, lines = meta_and_content_as_lines(lines)
 
         if meta_lines:
             meta = yaml.load('\n'.join(meta_lines))
