@@ -15,10 +15,21 @@ from .. import yaml
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
 
+'''
+|==[[class: "table table-striped"]]==|
+'''
 TABLE_RE = re.compile(r'^\s*\|==\[\[(?P<attrib>(.*?))\]\]==\|\s*$')
+
+'''
+|= Heading1 | Heading2 =|
+'''
 TH_RE = re.compile(
     r'^\s*(?:\[\[(?P<ra1>.*)\]\])?\s*\|=\s+(?P<th>(?:\S[\S ]*?\s+\|)+\s+\S[\S ]*?)\s+=\|\s*(?:\[\[(?P<ra2>.*)\]\])?\s*$'
 )
+
+'''
+|| stuff | more stuff ||
+'''
 TR_RE = re.compile(
     r'^\s*(?:\[\[(?P<ra1>.*)\]\])?\s*\|\|\s+(?P<tr>(?:\S[\S ]*?\s+\|)+\s+\S[\S ]*?)\s+\|\|\s*(?:\[\[(?P<ra2>.*)\]\])?\s*$'
 )

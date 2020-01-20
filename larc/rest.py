@@ -247,6 +247,8 @@ def update_endpoint(endpoint: IdResourceEndpoint, update: dict, *,
         '\n'
         f'Update dict: \n{pprint.pformat(update)}\n'
         '\n'
+        f'Response code: {response.status_code}'
+        '\n'
         'Response:\n'
         f'{response.content[:1000]}'
     )
@@ -314,11 +316,12 @@ def get_id_resource(resource_name: str, *,
                     id_key: str = 'id', meta_f=empty_dict,
                     unpack_f=do_nothing, single_unpack_f=do_nothing,
                     help=None, **iter_kw):
+    @curry
     def getter(parent_endpoint: IdResourceEndpoint, id: (int, str), **get_kw):
         return pipe(
             parent_endpoint(resource_name, id).get(**get_kw),
             IdResourceEndpoint.from_single_response(
-                parent_endpoint,
+                parent_endpoint(resource_name),
                 form_key=form_key, id_key=id_key, unpack_f=unpack_f,
                 meta_f=meta_f, single_unpack_f=single_unpack_f,
             )
@@ -364,6 +367,7 @@ def get_id_resources(resource_name: str, *, form_key: str = None,
 
     return getter
 
+@curry
 def new_id_resource(resource_name: str, *,
                     form_key: str = None, id_key: str = 'id',
                     get_kw=None, help: str = None, memo=False,

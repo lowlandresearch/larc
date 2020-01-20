@@ -9,7 +9,7 @@ from ruamel.yaml.comments import CommentedMap
 from toolz import pipe
 from multipledispatch import dispatch
 
-from .common import no_pyrsistent
+from . import common
 
 log = logging.getLogger('yaml')
 log.addHandler(logging.NullHandler())
@@ -32,6 +32,13 @@ def read_yaml(path: (str, Path)):
     with Path(path).expanduser().open() as rfp:
         return load(rfp)
 
+def maybe_read_yaml(path: (str, Path)):
+    try:
+        return read_yaml(path)
+    except Exception:
+        log.exception(f'Error reading YAML path: {path}')
+        return common.Null
+
 def _write_yaml(path, data):
     with Path(path).open('w') as wfp:
         dump(data, wfp)
@@ -52,7 +59,9 @@ def write_yaml(path, dict_data):
     Raises: on error, will raise exception
 
     '''
-    return _write_yaml(path, pipe(dict_data, no_pyrsistent, CommentedMap))
+    return _write_yaml(path, pipe(dict_data,
+                                  common.no_pyrsistent,
+                                  CommentedMap))
 
 @dispatch((str, Path), Iterable)  # noqa
 def write_yaml(path, iterable_data):
@@ -69,7 +78,7 @@ def write_yaml(path, iterable_data):
     Raises: on error, will raise exception
 
     '''
-    return _write_yaml(path, pipe(iterable_data, no_pyrsistent))
+    return _write_yaml(path, pipe(iterable_data, common.no_pyrsistent))
 
 @dispatch((str, Path), object)  # noqa
 def write_yaml(path, object_data):
