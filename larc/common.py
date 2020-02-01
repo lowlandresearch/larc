@@ -25,6 +25,7 @@ import tempfile                 # noqa: for doctest
 import base64
 import urllib
 import string
+import hashlib
 
 from multipledispatch import dispatch
 from pyrsistent import pmap, pvector, PVector
@@ -80,6 +81,7 @@ def do_nothing(value):
     'Banana Pudding'
     '''
     return value
+noop = do_nothing
 
 def b64decode(content: Union[bytes, str]):
     return base64.b64decode(
@@ -292,7 +294,7 @@ def jmes(search, d):
     '''
     if is_null(d):
         log.error(
-            f'null dict passed to jmes {mini_tb(5)}'
+            f'null dict passed to jmes (search: {search})'
         )
         return Null
     return jmespath.search(search, d)
@@ -449,7 +451,7 @@ def walk(path):
 
     '''
     return pipe(
-        os.walk(path),
+        os.walk(Path(path).expanduser().resolve()),
         vmapcat(lambda root, dirs, files: [Path(root, f) for f in files]),
     )
 
@@ -1081,6 +1083,9 @@ class _null:
             cls._instance = super(_null, cls).__new__(cls)
         return cls._instance
 
+    def __iter__(self):
+        return iter([])
+
     def __repr__(self):
         return 'Null'
 
@@ -1189,6 +1194,7 @@ def maybe_pipe(value, *functions, default=None):
             return Null if default is None else default
     return value
 
+@curry
 def maybe_int(value, default=None):
     '''Convert to int or return Null (or non-null default)
 
@@ -1206,6 +1212,7 @@ def is_int(value):
         return False
     return True
 
+@curry
 def maybe_float(value, default=None):
     '''Convert to float or return Null (or non-null default)
 
@@ -1213,6 +1220,8 @@ def maybe_float(value, default=None):
     if is_float(value):
         return float(value)
     return default or Null
+
+float_or_zero = maybe_float(default=0)
 
 def is_float(value):
     try:
@@ -1314,6 +1323,13 @@ def maybe_last(iterable, *, default=None):
 # Dictionary functions
 #
 # ----------------------------------------------------------------------
+
+def dict_hash(d):
+    return pipe(
+        json.dumps(d, sort_keys=True),
+        lambda s: hashlib.md5(s).hexdigest(),
+    )
+
 
 def cmerge(*dicts):
     '''Curried dictionary merge
