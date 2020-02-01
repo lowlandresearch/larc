@@ -1099,15 +1099,15 @@ class _null:
         return False
 
     def __next__(self):
-        return Null
+        return self.__class__._instance
 
     def __getattr__(self, key):
         if key == '__wrapped__':
             return lambda *a, **kw: None
-        return Null
+        return self.__class__._instance
 
     def __getitem__(self, key):
-        return Null
+        return self.__class__._instance
 
     def __lt__(self, other):
         return False
@@ -1125,31 +1125,31 @@ class _null:
         return False
 
     def __call__(self, *a, **kw):
-        return Null
+        return self.__class__._instance
 
     def __add__(self, *a):
-        return Null
+        return self.__class__._instance
 
     def __radd__(self, *a):
-        return Null
+        return self.__class__._instance
 
     def __sub__(self, *a):
-        return Null
+        return self.__class__._instance
 
     def __rsub__(self, *a):
-        return Null
+        return self.__class__._instance
 
     def __mul__(self, *a):
-        return Null
+        return self.__class__._instance
 
     def __rmul__(self, *a):
-        return Null
+        return self.__class__._instance
 
     def __div__(self, *a):
-        return Null
+        return self.__class__._instance
 
     def __rdiv__(self, *a):
-        return Null
+        return self.__class__._instance
 
 Null = _null()
 
@@ -1201,7 +1201,7 @@ def maybe_int(value, default=None):
     '''
     if is_int(value):
         return int(value)
-    return default or Null
+    return Null if default is None else default
 
 def is_int(value):
     try:
@@ -1219,7 +1219,7 @@ def maybe_float(value, default=None):
     '''
     if is_float(value):
         return float(value)
-    return default or Null
+    return Null if default is None else default
 
 float_or_zero = maybe_float(default=0)
 
