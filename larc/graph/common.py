@@ -49,6 +49,11 @@ def introspect_function(func):
 
 def is_introspect_function(function):
     return function.__name__ in _introspect_functions
+
+_edge_functions = set()
+def edge_function(func):
+    _edge_functions.add(func.__name__)
+    return func
         
 Selector = T.Callable[[nx.Graph, T.Any, dict], bool]
 
@@ -84,7 +89,17 @@ def neighbors_of_type(type, graph, node_id, *,
 @_.curry
 @introspect_function
 def get(key: str, graph: nx.Graph, node_id: T.Any):
-    return graph.nodes[node_id][key]
+    return _.pipe(
+        graph.nodes[node_id],
+        __.jmes(key),
+    )
+
+@_.curry
+@edge_function
+def e_get(key: str, graph: nx.Graph, v0: T.Any, v1: T.Any):
+    return _.pipe(
+        graph.edges,
+    )
 
 @_.curry
 @introspect_function
@@ -185,7 +200,7 @@ class ValuePipe:
     def __gt__(self, function):
         return function(self.value)
 
-class Graph(nx.Graph):
+class Graph(nx.DiGraph):
     def __init__(self, data, graph_pipe, **attr):
         self.graph_pipe = graph_pipe
         super().__init__(data, **attr)

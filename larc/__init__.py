@@ -2,4 +2,4 @@ from . import (
     common, parallel, yaml, logging, rest, shell, markdown, graph,
 )
 
-__version__ = '0.0.17'
+__version__ = '0.0.17-rc.1'

@@ -1324,10 +1324,11 @@ def maybe_last(iterable, *, default=None):
 #
 # ----------------------------------------------------------------------
 
-def dict_hash(d):
+@curry
+def dict_hash(hash_func, d):
     return pipe(
         json.dumps(d, sort_keys=True),
-        lambda s: hashlib.md5(s).hexdigest(),
+        lambda s: hash_func(s).hexdigest(),
     )
 
 
