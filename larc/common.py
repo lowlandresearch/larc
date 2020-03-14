@@ -4,6 +4,7 @@ import traceback
 import importlib
 import logging
 from ipaddress import ip_address, ip_interface, ip_network
+import typing as T
 from typing import (
     Iterable, Hashable, Union, Sequence, Any, Callable, Tuple,
 )
@@ -101,9 +102,12 @@ def b64encode(content: Union[bytes, str]):
 #
 # ----------------------------------------------------------------------
 
-def random_str(n=8, *, rng=None):
+def random_str(n=8, *, rng=None, exclude: T.Sequence = None):
     rng = rng or random
-    return ''.join(rng.sample(string.ascii_lowercase, n))
+    r_str = ''.join(rng.choice(string.ascii_letters) for _ in range(n))
+    if exclude and r_str in exclude:
+        return random_str(n, rng=rng, exclude=exclude)
+    return r_str
 
 def random_sentence(w=10, *, rng=None):
     rng = rng or random
@@ -116,11 +120,11 @@ def random_sentence(w=10, *, rng=None):
 
 def random_user(n=8, *, rng=None):
     rng = rng or random
-    return ''.join(rng.sample(string.ascii_lowercase, n))
+    return ''.join(rng.choice(string.ascii_lowercase) for _ in range(n))
 
-def random_pw(n=16, *, rng=None):
+def random_pw(n=16, *, rng=None, pop=string.printable[:64]):
     rng = rng or random
-    return ''.join(rng.sample(string.printable[:64], n))
+    return ''.join(rng.choice(pop) for _ in range(n))
 
 @curry
 def random_sample(N, seq, *, rng=None):
