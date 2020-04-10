@@ -24,6 +24,9 @@ def meta_and_content_as_lines(lines: list) -> Tuple[list, list]:
     (['a: 1', 'b: 2'], ['Some **markdown**'])
 
     '''
+    if not lines:
+        return [], lines
+    
     if lines[0] != '---':
         return [], lines
 
