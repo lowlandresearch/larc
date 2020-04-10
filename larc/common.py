@@ -27,6 +27,8 @@ import base64
 import urllib
 import string
 import hashlib
+import socket
+from contextlib import closing
 
 from multipledispatch import dispatch
 from pyrsistent import pmap, pvector, PVector
@@ -37,14 +39,14 @@ import requests
 
 try:
     from cytoolz.curried import (
-        curry, pipe, compose, merge, concatv,
+        curry, pipe, compose, compose_left, merge, concatv,
         map, mapcat, assoc, dissoc, valmap, first, second, last,
         complement, get as _get, concat, filter, do, groupby,
         partial, juxt,
     )
 except ImportError:
     from toolz.curried import (
-        curry, pipe, compose, merge, concatv,
+        curry, pipe, compose, compose_left, merge, concatv,
         map, mapcat, assoc, dissoc, valmap, first, second, last,
         complement, get as _get, concat, filter, do, groupby,
         partial, juxt,
@@ -84,6 +86,58 @@ def do_nothing(value):
     return value
 noop = do_nothing
 
+# ----------------------------------------------------------------------
+#
+# Basic type operations
+#
+# ----------------------------------------------------------------------
+
+def is_str(v):
+    return isinstance(v, str)
+is_not_string = complement(is_str)
+
+def to_str(content, encoding='utf-8', errors='ignore'):
+    if type(content) is bytes:
+        return content.decode(encoding, errors)
+    else:
+        return str(content)
+
+def to_bytes(content, encoding='utf-8', errors='ignore'):
+    if type(content) is str:
+        return content.encode(encoding, errors)
+    elif type(content) is bytes:
+        return content
+    else:
+        return str(content).encode(encoding, errors)
+
+def is_dict(d):
+    return isinstance(d, collections.abc.Mapping)
+is_not_dict = complement(is_dict)
+
+def is_indexable(s):
+    return hasattr(s, '__getitem__')
+
+def is_seq(s):
+    return (isinstance(s, collections.abc.Iterable) and not
+            is_dict(s) and not
+            isinstance(s, (str, bytes)))
+is_not_seq = complement(is_seq)
+
+def flatdict(obj: Union[dict, Any], keys=()):
+    '''Flatten a Python dictionary such that nested values are returned
+    with the key sequence required to access them.
+
+    Examples:
+
+    >>> pipe({'a': {'b': [1, 2, 3]}, 'c': 2}, flatdict, list)
+    [('a', 'b', [1, 2, 3]), ('c', 2)]
+    '''
+    if is_dict(obj):
+        for k, v in obj.items():
+            yield from flatdict(v, keys + (k, ))
+    else:
+        yield keys + (obj,)
+
 def b64decode(content: Union[bytes, str]):
     return base64.b64decode(
         to_bytes(content) + b'=' * (len(content) % 4)
@@ -95,7 +149,26 @@ def b64encode(content: Union[bytes, str]):
         to_bytes,
         base64.b64encode,
     )
+b64encode_str = compose_left(b64encode, to_str)
+
+concat_t = compose(tuple, concat)
+concatv_t = compose(tuple, concatv)
+
     
+# ----------------------------------------------------------------------
+#
+# Hashing functions
+#
+# ----------------------------------------------------------------------
+
+@curry
+def online_hash(hash_func, path):
+    hash_obj = hash_func()
+    with Path(path).expanduser().open('rb') as rfp:
+        for chunk in iter(lambda: rfp.read(4096), b''):
+            hash_obj.update(chunk)
+    return hash_obj.hexdigest()
+
 # ----------------------------------------------------------------------
 #
 # Random content creation functions
@@ -1291,6 +1364,7 @@ def sc_juxt(*funcs):
     ''')
     return caller
 
+@curry
 def maybe_first(iterable, *, default=None):
     '''Return first element of iterable. If empty return default=Null.
 
@@ -1301,6 +1375,7 @@ def maybe_first(iterable, *, default=None):
         pass
     return Null if default is None else default
 
+@curry
 def maybe_second(iterable, *, default=None):
     '''Return second element of iterable. If empty return default=Null.
 
@@ -1311,6 +1386,7 @@ def maybe_second(iterable, *, default=None):
         pass
     return Null if default is None else default
 
+@curry
 def maybe_last(iterable, *, default=None):
     '''Return last element of iterable If empty return default=Null.
 
@@ -1851,59 +1927,6 @@ def unzpad(ip):
 
 # ----------------------------------------------------------------------
 #
-# Basic type operations
-#
-# ----------------------------------------------------------------------
-
-def is_str(v):
-    return isinstance(v, str)
-is_not_string = complement(is_str)
-
-def to_str(content, encoding='utf-8', errors='ignore'):
-    if type(content) is bytes:
-        return content.decode(encoding, errors)
-    else:
-        return str(content)
-
-def to_bytes(content, encoding='utf-8', errors='ignore'):
-    if type(content) is str:
-        return content.encode(encoding, errors)
-    elif type(content) is bytes:
-        return content
-    else:
-        return str(content).encode(encoding, errors)
-
-def is_dict(d):
-    return isinstance(d, collections.abc.Mapping)
-is_not_dict = complement(is_dict)
-
-def is_indexable(s):
-    return hasattr(s, '__getitem__')
-
-def is_seq(s):
-    return (isinstance(s, collections.abc.Iterable) and not
-            is_dict(s) and not
-            isinstance(s, (str, bytes)))
-is_not_seq = complement(is_seq)
-
-def flatdict(obj: Union[dict, Any], keys=()):
-    '''Flatten a Python dictionary such that nested values are returned
-    with the key sequence required to access them.
-
-    Examples:
-
-    >>> pipe({'a': {'b': [1, 2, 3]}, 'c': 2}, flatdict, list)
-    [('a', 'b', [1, 2, 3]), ('c', 2)]
-    '''
-    if is_dict(obj):
-        for k, v in obj.items():
-            yield from flatdict(v, keys + (k, ))
-    else:
-        yield keys + (obj,)
-
-
-# ----------------------------------------------------------------------
-#
 # Time-oriented functions
 #
 # ----------------------------------------------------------------------
@@ -2169,3 +2192,53 @@ def contains(value, obj):
     '''
     return value in obj
 
+
+def free_port():
+    # https://stackoverflow.com/a/45690594/11483229
+    with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+        s.bind(('', 0))
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        return s.getsockname()[1]
+
+# ----------------------------------------------------------------------
+#
+# Path handling
+#
+# ----------------------------------------------------------------------
+
+def is_path_type(t):
+    return t in {
+        T.Union[str, Path], Path
+    }
+
+POS_PARAM_KINDS = {
+    inspect.Parameter.POSITIONAL_ONLY,
+    inspect.Parameter.POSITIONAL_OR_KEYWORD,
+    inspect.Parameter.VAR_POSITIONAL,
+}
+def convert_paths(func):
+    path_params = {
+        name: (i, param)
+        for i, (name, param)
+        in enumerate(inspect.signature(func).parameters.items())
+        if is_path_type(param.annotation)
+    }
+
+    pos_params = {
+        i: (name, param)
+        for name, (i, param) in path_params.items()
+        if param.kind in POS_PARAM_KINDS
+    }
+
+    @functools.wraps(func)
+    def path_arg_converter(*a, **kw):
+        pos = [i for i in pos_params if i < len(a)]
+
+        a = list(a)
+        for i in pos:
+            a[i] = Path(a[i]).expanduser()
+        for k, v in kw.items():
+            if k in path_params:
+                kw[k] = Path(v).expanduser()
+        return func(*a, **kw)
+    return path_arg_converter
