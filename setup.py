@@ -83,6 +83,7 @@ setup(
             'getsubnets=larc.cli.ips:get_subnets',
             'zpad=larc.cli.ips:zpad_ips',
             'unzpad=larc.cli.ips:unzpad_ips',
+            'larc-render=larc.cli.text:render_templates'
         ],
     },
 )
