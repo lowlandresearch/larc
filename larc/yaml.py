@@ -1,7 +1,7 @@
 import logging
 from pathlib import Path
 from functools import wraps
-from typing import Any
+import typing as T
 from collections.abc import Mapping, Iterable
 
 import ruamel.yaml
@@ -22,7 +22,7 @@ def dump(*a, **kw) -> str:
     return ruamel.yaml.dump(*a, **kw)
 
 @wraps(ruamel.yaml.load)
-def load(*a, **kw) -> Any:
+def load(*a, **kw) -> T.Any:
     kw['Loader'] = ruamel.yaml.RoundTripLoader
     return ruamel.yaml.load(*a, **kw)
     
