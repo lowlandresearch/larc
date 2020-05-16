@@ -142,6 +142,7 @@ def b64decode(content: Union[bytes, str]):
     return base64.b64decode(
         to_bytes(content) + b'=' * (len(content) % 4)
     )
+b64decode_str = compose_left(b64decode, to_str)
 
 def b64encode(content: Union[bytes, str]):
     return pipe(
@@ -1939,6 +1940,9 @@ def maybe_dt(ts):
     Null
 
     '''
+    if isinstance(ts, datetime):
+        return ts
+
     try:
         return dateutil.parser.parse(ts)
     except ValueError:
