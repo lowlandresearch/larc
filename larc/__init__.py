@@ -3,4 +3,4 @@ from . import (
     templates,
 )
 
-__version__ = '0.0.18-rc.2'
+__version__ = '0.0.19'
