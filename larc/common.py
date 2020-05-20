@@ -61,6 +61,98 @@ ip_re = re.compile(
 )
 ip_only_re = re.compile(f'^{ip_re.pattern}$')
 
+# ----------------------------------------------------------------------
+#
+# Monad(ish) functions (e.g. approximation to Maybe monad)
+#
+# ----------------------------------------------------------------------
+
+class _null:
+    '''Null type for creating pseudo-monads.
+
+    Similar to Nothing in Haskell
+
+    Do **not** use as an iterable (i.e. in for loops or over maps), as
+    this leads to **infinite loops**.
+
+    '''
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(_null, cls).__new__(cls)
+        return cls._instance
+
+    def __iter__(self):
+        return iter([])
+
+    def __repr__(self):
+        return 'Null'
+
+    def __bool__(self):
+        return False
+
+    def __len__(self):
+        return 0
+
+    def __contains__(self, *a):
+        return False
+
+    def __next__(self):
+        return self.__class__._instance
+
+    def __getattr__(self, key):
+        if key == '__wrapped__':
+            return lambda *a, **kw: None
+        return self.__class__._instance
+
+    def __getitem__(self, key):
+        return self.__class__._instance
+
+    def __lt__(self, other):
+        return False
+
+    def __gt__(self, other):
+        return False
+
+    def __eq__(self, other):
+        return False
+
+    def __le__(self, other):
+        return False
+
+    def __ge__(self, other):
+        return False
+
+    def __call__(self, *a, **kw):
+        return self.__class__._instance
+
+    def __add__(self, *a):
+        return self.__class__._instance
+
+    def __radd__(self, *a):
+        return self.__class__._instance
+
+    def __sub__(self, *a):
+        return self.__class__._instance
+
+    def __rsub__(self, *a):
+        return self.__class__._instance
+
+    def __mul__(self, *a):
+        return self.__class__._instance
+
+    def __rmul__(self, *a):
+        return self.__class__._instance
+
+    def __div__(self, *a):
+        return self.__class__._instance
+
+    def __rdiv__(self, *a):
+        return self.__class__._instance
+
+Null = _null()
+
 @curry
 def log_lines(log_function, lines):
     return pipe(
@@ -345,11 +437,11 @@ def mini_tb(levels=3):
 #
 # ----------------------------------------------------------------------
 
-def maybe_json(response: requests.Response):
+def maybe_json(response: requests.Response, *, default=Null):
     try:
         return response.json()
     except ValueError:
-        return Null
+        return default
 
 @curry
 @functools.wraps(json.dumps)
@@ -362,7 +454,7 @@ def json_loads(*a, **kw):
     return json.loads(*a, **kw)
 
 @curry
-def jmes(search, d):
+def jmes(search, d, *, default=Null):
     '''Curried jmespath.search
 
     Examples:
@@ -374,7 +466,7 @@ def jmes(search, d):
         log.error(
             f'null dict passed to jmes (search: {search})'
         )
-        return Null
+        return default
     return jmespath.search(search, d)
 
 
@@ -524,7 +616,7 @@ def walk(path):
     ...     _ = Path(root, 'a', 'a.txt').write_text('')
     ...     _ = Path(root, 'a', 'b', 'b.txt').write_text('')
     ...     paths = tuple(walk(root))
-    >>> paths == (Path(root, 'a', 'a.txt'), Path(root, 'a', 'b', 'b.txt'))
+    >>> paths == (Path(root, 'a', 'a.txt').resolve(), Path(root, 'a', 'b', 'b.txt').resolve())
     True
 
     '''
@@ -543,14 +635,14 @@ def walkmap(func, root):
         map(func),
     )
 
-def check_parents_for_file(name, start_dir=Path('.')):
+def check_parents_for_file(name, start_dir=Path('.'), *, default=Null):
     start_path = Path(start_dir).expanduser()
     directories = concatv([start_path], start_path.parents)
     for base in directories:
         path = Path(base, name)
         if path.exists():
             return path
-    return Null
+    return default
 
 def to_paths(*paths):
     return pipe(paths, map(Path), tuple)
@@ -880,7 +972,7 @@ def select(keys, iterable):
         yield tuple(indexable[k] for k in keys)
 
 @curry
-def find(find_func, iterable):
+def find(find_func, iterable, *, default=Null):
     '''Finds first value in iterable that when passed to find_func returns
     truthy
 
@@ -892,10 +984,10 @@ def find(find_func, iterable):
     for value in iterable:
         if find_func(value):
             return value
-    return Null
+    return default
 
 @curry
-def vfind(find_func, iterable):
+def vfind(find_func, iterable, *, default=Null):
     '''Variadic find: finds first value in iterable that when passed to
     find_func returns truthy
 
@@ -908,7 +1000,7 @@ def vfind(find_func, iterable):
     return find(vcall(find_func), iterable)
 
 @curry
-def index(find_func, iterable):
+def index(find_func, iterable, *, default=Null):
     '''Finds index of the first value in iterable that when passed to
     find_func returns truthy
 
@@ -921,10 +1013,10 @@ def index(find_func, iterable):
     for i, value in enumerate(iterable):
         if find_func(value):
             return i
-    return Null
+    return default
 
 @curry
-def vindex(find_func, iterable):
+def vindex(find_func, iterable, *, default=Null):
     '''Variadic vindex: finds index of first value in iterable that when
     passed to find_func returns truthy
 
@@ -970,7 +1062,7 @@ def vseti(index, func, iterable):
 vseti_t = compose(tuple, vseti)
 
 @curry
-def callif(if_func, func, value):
+def callif(if_func, func, value, *, default=Null):
     '''Return func(value) only if if_func(value) returns truthy, otherwise
     Null
 
@@ -983,10 +1075,10 @@ def callif(if_func, func, value):
     '''
     if if_func(value):
         return func(value)
-    return Null
+    return default
 
 @curry
-def vcallif(if_func, func, value):
+def vcallif(if_func, func, value, *, default=Null):
     '''Variadic callif: return func(value) only if if_func(value) returns
     truthy, otherwise Null. Both if_func and func are called
     variadically.
@@ -999,7 +1091,7 @@ def vcallif(if_func, func, value):
     4
 
     '''
-    return callif(vcall(if_func), vcall(func), value)
+    return callif(vcall(if_func), vcall(func), value, default=default)
 
 @curry
 def vdo(func, value):
@@ -1100,7 +1192,8 @@ def shuffled(seq):
     tup = tuple(seq)
     return random.sample(tup, len(tup))
 
-def first_true(iterable, *, default=None):
+@curry
+def first_true(iterable, *, default=Null):
     '''Return the first truthy thing in iterable. If none are true, return
     default=Null.
 
@@ -1108,10 +1201,10 @@ def first_true(iterable, *, default=None):
     for v in iterable:
         if v:
             return v
-    return Null if default is None else default
+    return default
 
 @curry
-def getitem(i, indexable, default=None):
+def getitem(i, indexable, default=Null):
     default = default or Null
     if is_dict(indexable):
         return indexable.get(i, default)
@@ -1131,7 +1224,7 @@ def get_many(keys, indexable, default=None):
         yield get(k, indexable, default=default)
 getmany = get_many
 
-@curry 
+@curry
 def get_many_t(keys, indexable, default=None):
     return pipe(
         get_many(keys, indexable, default=default),
@@ -1139,103 +1232,11 @@ def get_many_t(keys, indexable, default=None):
     )
 getmany_t = get_many_t
 
-# ----------------------------------------------------------------------
-#
-# Monad(ish) functions (e.g. approximation to Maybe monad)
-#
-# ----------------------------------------------------------------------
-
-class _null:
-    '''Null type for creating pseudo-monads.
-
-    Similar to Nothing in Haskell
-
-    Do **not** use as an iterable (i.e. in for loops or over maps), as
-    this leads to **infinite loops**.
-
-    '''
-    _instance = None
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super(_null, cls).__new__(cls)
-        return cls._instance
-
-    def __iter__(self):
-        return iter([])
-
-    def __repr__(self):
-        return 'Null'
-
-    def __bool__(self):
-        return False
-
-    def __len__(self):
-        return 0
-
-    def __contains__(self, *a):
-        return False
-
-    def __next__(self):
-        return self.__class__._instance
-
-    def __getattr__(self, key):
-        if key == '__wrapped__':
-            return lambda *a, **kw: None
-        return self.__class__._instance
-
-    def __getitem__(self, key):
-        return self.__class__._instance
-
-    def __lt__(self, other):
-        return False
-
-    def __gt__(self, other):
-        return False
-
-    def __eq__(self, other):
-        return False
-
-    def __le__(self, other):
-        return False
-
-    def __ge__(self, other):
-        return False
-
-    def __call__(self, *a, **kw):
-        return self.__class__._instance
-
-    def __add__(self, *a):
-        return self.__class__._instance
-
-    def __radd__(self, *a):
-        return self.__class__._instance
-
-    def __sub__(self, *a):
-        return self.__class__._instance
-
-    def __rsub__(self, *a):
-        return self.__class__._instance
-
-    def __mul__(self, *a):
-        return self.__class__._instance
-
-    def __rmul__(self, *a):
-        return self.__class__._instance
-
-    def __div__(self, *a):
-        return self.__class__._instance
-
-    def __rdiv__(self, *a):
-        return self.__class__._instance
-
-Null = _null()
-
 def is_null(v):
     return v is None or v is Null
 not_null = complement(is_null)
 
-def maybe(value, default=None):
+def maybe(value, default=Null):
     '''If value is "null" (i.e. is either None or the Null object), return
     Null, otherwise return value. Like Scala's ?? operator.
 
@@ -1248,12 +1249,10 @@ def maybe(value, default=None):
 
     '''
     if is_null(value):
-        if default is not None:
-            return default
-        return Null
+        return default
     return value
 
-def maybe_pipe(value, *functions, default=None):
+def maybe_pipe(value, *functions, default=Null):
     '''Sort-of Maybe monad. Pipe value through series of functions unless
     and until one of them returns a "null" (i.e. None or Null) value
     or throws an Exception, where it will return Null or a non-null
@@ -1261,25 +1260,25 @@ def maybe_pipe(value, *functions, default=None):
 
     '''
     if is_null(value):
-        return Null
+        return default
     for f in functions:
         try:
             value = f(value)
         except Exception:
             log.error(f'Error in maybe_pipe: \n{traceback.format_exc()}')
-            return Null if default is None else default
+            return default
         if is_null(value):
-            return Null if default is None else default
+            return default
     return value
 
 @curry
-def maybe_int(value, default=None):
+def maybe_int(value, default=Null):
     '''Convert to int or return Null (or non-null default)
 
     '''
     if is_int(value):
         return int(value)
-    return Null if default is None else default
+    return default
 
 def is_int(value):
     try:
@@ -1291,13 +1290,13 @@ def is_int(value):
     return True
 
 @curry
-def maybe_float(value, default=None):
+def maybe_float(value, default=Null):
     '''Convert to float or return Null (or non-null default)
 
     '''
     if is_float(value):
         return float(value)
-    return Null if default is None else default
+    return default
 
 float_or_zero = maybe_float(default=0)
 
@@ -1311,27 +1310,27 @@ def is_float(value):
     return True
 
 @curry
-def maybe_max(iterable, **kw):
+def maybe_max(iterable, *, default=Null, **kw):
     '''Return max of iterable or (if empty) return Null
 
     '''
     try:
         return max(iterable, **kw)
     except ValueError:
-        return Null
+        return default
 
 @curry
-def maybe_min(iterable, **kw):
+def maybe_min(iterable, *, default=Null, **kw):
     '''Return min of iterable or (if empty) return Null
 
     '''
     try:
         return min(iterable, **kw)
     except ValueError:
-        return Null
+        return default
 
 @curry
-def short_circuit(function, value):
+def short_circuit(function, value, *, default=Null):
     '''If function(value) is falsy, return Null. Useful for
     inserting into maybe_pipe to short-circuit.
 
@@ -1340,10 +1339,10 @@ def short_circuit(function, value):
 
     '''
     if not function(value):
-        return Null
+        return default
     return value
 
-def sc_juxt(*funcs):
+def sc_juxt(*funcs, default=Null):
     '''Short-circuiting juxt
 
     '''
@@ -1351,11 +1350,11 @@ def sc_juxt(*funcs):
         sc = False
         for f in funcs:
             if sc:
-                yield Null
+                yield default
             output = f(*a, **kw)
             if not output:
                 sc = True
-                yield Null
+                yield default
             else:
                 yield output
     caller.__doc__ = help_text(f'''
@@ -1366,7 +1365,7 @@ def sc_juxt(*funcs):
     return caller
 
 @curry
-def maybe_first(iterable, *, default=None):
+def maybe_first(iterable, *, default=Null):
     '''Return first element of iterable. If empty return default=Null.
 
     '''
@@ -1374,10 +1373,10 @@ def maybe_first(iterable, *, default=None):
         return first(iterable)
     except StopIteration:
         pass
-    return Null if default is None else default
+    return default
 
 @curry
-def maybe_second(iterable, *, default=None):
+def maybe_second(iterable, *, default=Null):
     '''Return second element of iterable. If empty return default=Null.
 
     '''
@@ -1385,10 +1384,10 @@ def maybe_second(iterable, *, default=None):
         return second(iterable)
     except StopIteration:
         pass
-    return Null if default is None else default
+    return default
 
 @curry
-def maybe_last(iterable, *, default=None):
+def maybe_last(iterable, *, default=Null):
     '''Return last element of iterable If empty return default=Null.
 
     '''
@@ -1396,7 +1395,7 @@ def maybe_last(iterable, *, default=None):
         return last(iterable)
     except StopIteration:
         pass
-    return Null if default is None else default
+    return default
 
 
 # ----------------------------------------------------------------------
@@ -1935,7 +1934,7 @@ def unzpad(ip):
 def ctime(path: Union[str, Path]):
     return Path(path).stat().st_ctime
 
-def maybe_dt(ts):
+def maybe_dt(ts, *, default=Null):
     '''Parse ts to datetime object (using dateutil.parser.parse) or return
     Null
 
@@ -1946,7 +1945,7 @@ def maybe_dt(ts):
     try:
         return dateutil.parser.parse(ts)
     except ValueError:
-        return Null
+        return default
 
 def parse_dt(ts: str, local=False):
     dt = dateutil.parser.parse(ts)
@@ -1962,6 +1961,7 @@ def ctime_as_dt(path: Union[str, Path]):
     )
 dt_ctime = ctime_as_dt
 
+@curry
 def to_dt(value, default=datetime.fromtimestamp(0)):
     '''Attempt to parse the given value as a datetime object, otherwise
     return default=epoch
