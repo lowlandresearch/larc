@@ -43,6 +43,9 @@ setup(
         'python-dateutil',
         'jmespath',
         'netifaces',
+        'markdown',
+        'jinja2',
+        'pillow',
     ],
 
     version=version(),
