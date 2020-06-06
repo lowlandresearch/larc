@@ -378,6 +378,8 @@ def no_pyrsistent(obj):
         )
     if is_seq(obj):
         return pipe(obj, map(no_pyrsistent), tuple)
+    if is_null(obj):
+        return None
     return obj
 
 def freeze(func):
@@ -1142,13 +1144,15 @@ def vmapif(func, seq):
     return seq
 
 @curry
-def groupdicts(regex, iterable, **kw):
+def groupdicts(regex, iterable, keep_match=False, **kw):
     regex = regex if isinstance(regex, re.Pattern) else re.compile(regex, **kw)
     return pipe(
         iterable,
         map(regex.search),
         filter(None),
-        map(lambda m: m.groupdict()),
+        map(lambda m: merge(
+            m.groupdict(), {'__match__': m} if keep_match else {}
+        )),
     )
 
 @curry
@@ -1156,7 +1160,7 @@ def groupdicts_from_regexes(regexes: Sequence[re.Pattern],
                             iterable: Iterable[str], **kw):
     return pipe(
         iterable,
-        juxt(*[compose(list, groupdicts(r)) for r in regexes]),
+        juxt(*[compose(list, groupdicts(r, **kw)) for r in regexes]),
         concat,
     )
 
@@ -1166,9 +1170,23 @@ def grep(raw_regex, iterable, **kw):
     return filter(lambda s: regex.search(s), iterable)
 
 @curry
+def grep_t(raw_regex, iterable, **kw):
+    return pipe(
+        grep(raw_regex, iterable, **kw),
+        tuple,
+    )
+
+@curry
 def grepv(raw_regex, iterable, **kw):
     regex = re.compile(raw_regex, **kw)
     return filter(lambda s: not regex.search(s), iterable)
+
+@curry
+def grepv_t(raw_regex, iterable, **kw):
+    return pipe(
+        grepv(raw_regex, iterable, **kw),
+        tuple,
+    )
 
 @curry
 def grepitems(raw_regex, iterable, **kw):
@@ -1407,8 +1425,9 @@ def maybe_last(iterable, *, default=Null):
 @curry
 def dict_hash(hash_func, d):
     return pipe(
-        json.dumps(d, sort_keys=True),
-        lambda s: hash_func(s).hexdigest(),
+        d, no_pyrsistent,
+        lambda d: json.dumps(d, sort_keys=True),
+        lambda s: hash_func(s.encode()).hexdigest(),
     )
 
 
@@ -2013,14 +2032,14 @@ def strip(content):
     return content.strip()
 
 @dispatch(str)
-def strip_comments(line):
-    return line[:line.index('#')] if '#' in line else line
+def strip_comments(line, *, char='#'):
+    return line[:line.index(char)] if char in line else line
     
 @dispatch((collections.abc.Iterable, list, tuple, PVector))  # noqa
-def strip_comments(lines):
+def strip_comments(lines, *, char='#'):
     return pipe(
         lines,
-        map(strip_comments),
+        map(lambda l: strip_comments(l, char=char)),
         tuple,
     )
 

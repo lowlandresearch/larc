@@ -1,6 +1,6 @@
 from . import (
-    common, parallel, yaml, logging, rest, shell, markdown, graph,
+    common, ssh, parallel, yaml, logging, rest, shell, markdown, graph,
     templates, cli,
 )
 
-__version__ = '0.0.20'
+__version__ = '0.0.21'

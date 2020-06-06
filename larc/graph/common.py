@@ -9,6 +9,7 @@ import re
 import abc
 import types
 import typing as T
+import pprint
 
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
@@ -151,7 +152,7 @@ class GraphPipe:
     def __or__(self, function):
         if __.is_str(function):
             # function = globals()[function]
-            log.debug(f'function space: {self.function_space}')
+            log.debug(f'function space: {pprint.pformat(self.function_space)}')
             function = eval(function, self.function_space)
 
         if is_traversal_function(function):
