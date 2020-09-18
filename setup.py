@@ -54,7 +54,7 @@ setup(
     long_description=long_description,
     long_description_content_type='text/markdown',
 
-    url='https://github.org/lowlandresearch/larc',
+    url='https://github.com/lowlandresearch/larc',
 
     author='Lowland Applied Research Company (LARC)',
     author_email='dogwynn@lowlandresearch.com',
