@@ -42,7 +42,7 @@ setup(
         'xmljson',
         'python-dateutil',
         'jmespath',
-        'netifaces',
+        'ifcfg',
         'markdown',
         'jinja2',
         'pillow',

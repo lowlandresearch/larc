@@ -16,4 +16,4 @@ paramiko
 xmljson
 python-dateutil
 jmespath
-netifaces
+ifcfg
