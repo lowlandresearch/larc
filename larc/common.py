@@ -26,13 +26,14 @@ import tempfile                 # noqa: for doctest
 import base64
 import urllib
 import string
-import hashlib
+import hashlib                  # noqa: for doctest
 import socket
+import subprocess
 from contextlib import closing
 
 from multipledispatch import dispatch
 from pyrsistent import pmap, pvector, PVector
-import netifaces
+import ifcfg
 import jmespath
 import dateutil.parser
 import requests
@@ -44,6 +45,7 @@ try:
         complement, get as _get, concat, filter, do, groupby,
         partial, juxt,
     )
+    import cytoolz.curried as _
 except ImportError:
     from toolz.curried import (
         curry, pipe, compose, compose_left, merge, concatv,
@@ -51,6 +53,7 @@ except ImportError:
         complement, get as _get, concat, filter, do, groupby,
         partial, juxt,
     )
+    import toolz.curried as _
 
 log = logging.getLogger('common')
 log.addHandler(logging.NullHandler())
@@ -380,6 +383,16 @@ def no_pyrsistent(obj):
         return pipe(obj, map(no_pyrsistent), tuple)
     if is_null(obj):
         return None
+    if isinstance(obj, str):
+        return str(obj)
+    if isinstance(obj, float):
+        return float(obj)
+    if isinstance(obj, int):
+        return int(obj)
+    if maybe_int(obj) == obj:
+        return int(obj)
+    if maybe_float(obj) == obj:
+        return float(obj)
     return obj
 
 def freeze(func):
@@ -439,6 +452,7 @@ def mini_tb(levels=3):
 #
 # ----------------------------------------------------------------------
 
+@curry
 def maybe_json(response: requests.Response, *, default=Null):
     try:
         return response.json()
@@ -1424,6 +1438,13 @@ def maybe_last(iterable, *, default=Null):
 
 @curry
 def dict_hash(hash_func, d):
+    '''Hash a dictionary with hash function (e.g. SHA1)
+
+    Examples:
+
+    >>> pipe({"a": 1}, dict_hash(hashlib.sha1))
+    'e4ad4daad53a2eec0313386ada88211e50d693bd'
+    '''
     return pipe(
         d, no_pyrsistent,
         lambda d: json.dumps(d, sort_keys=True),
@@ -1784,26 +1805,54 @@ def vbakedict(key_f, value_f, iterable):
 #
 # ----------------------------------------------------------------------
 
+# def windows_ipconfig():
+#     ipconfig = subprocess.getoutput('ipconfig /all')
+#     config_re = re.compile(r'^Windows IP Configuration\s+Host Name . . . . . . . . . . . . : (?<host>.*)(?:\s+[\w ]*[. ]*: .*\n)*?\n', re.M)
+#     #     r'^',
+#     # ]
+#     int_re = [
+#         r"^(?P<device>\w.+):",
+#         r"^   Physical Address. . . . . . . . . : (?P<ether>[ABCDEFabcdef\d-]+)",
+#         r"^   IPv4 Address. . . . . . . . . . . : (?P<inet4>[^\s\(]+)",
+#         r"^   IPv6 Address. . . . . . . . . . . : (?P<inet6>[ABCDEFabcdef\d\:\%]+)",
+#         r"^\s+Default Gateway . . . . . . . . . : (?P<default_gateway>[^\s\(]+)",
+#     ]
+    
+
 def current_ip(ip_version):
     '''Returns the IP address (for a given version) of the interface where
     the default gateway is found
 
     '''
-    return maybe_pipe(
-        netifaces.gateways(),
-        getitem('default'),
-        getitem(ip_version),
-        second,
-        netifaces.ifaddresses,
-        getitem(ip_version),
-        maybe_first,
-        lambda d: ip_interface(
-            f'{d["addr"]}/{get_slash_from_mask(d["netmask"])}'
+    ip_key = {
+        'v4': 'inet',
+        'v6': 'inet6',
+    }
+    default = ifcfg.get_parser().default_interface
+    ip = default.get(ip_key[ip_version])
+    netmask = default.get('netmask')
+    if ip and netmask:
+        return ip_interface(
+            f'{ip}/{get_slash_from_mask(netmask)}'
         )
-    )
+    # if default[
+    # return maybe_pipe(
+    #     ifcfg.interfaces().items(),
+    #     # vmap(lambda iface, d: 
+    #     # netifaces.gateways(),
+    #     getitem('default'),
+    #     getitem(ip_version),
+    #     second,
+    #     # netifaces.ifaddresses,
+    #     getitem(ip_version),
+    #     maybe_first,
+    #     lambda d: ip_interface(
+    #         f'{d["addr"]}/{get_slash_from_mask(d["netmask"])}'
+    #     )
+    # )
 
-current_ipv4 = partial(current_ip, netifaces.AF_INET)
-current_ipv6 = partial(current_ip, netifaces.AF_INET6)
+current_ipv4 = partial(current_ip, 'v4')
+current_ipv6 = partial(current_ip, 'v6')
 
 def is_ipv4(ip: (str, int)):
     try:
