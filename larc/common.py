@@ -707,7 +707,7 @@ def csv_rows_from_content(content: Union[str, bytes], *,
     Examples:
     
     >>> pipe(csv_rows_from_content('c1,c2,c3\n1,2,3'), list)
-    [OrderedDict([('c1', '1'), ('c2', '2'), ('c3', '3')])]
+    [{'c1': '1', 'c2': '2', 'c3': '3'}]
 
     If header is False, then rows will be returned as lists.
     
@@ -717,7 +717,7 @@ def csv_rows_from_content(content: Union[str, bytes], *,
     >>> pipe(csv_rows_from_content(
     ...   '1,2,3', header=False, columns=['c1', 'c2', 'c3']
     ... ), list)
-    [OrderedDict([('c1', '1'), ('c2', '2'), ('c3', '3')])]
+    [{'c1': '1', 'c2': '2', 'c3': '3'}]
 
     If header is False and header row exists, the header row will be
     interpreted as a regular row.
@@ -828,7 +828,12 @@ def csv_rows_to_fp(wfp, rows: Iterable[Union[dict, Sequence[str]]], *,
     '''
     
     row_iter = iter(rows)
-    first_row = next(row_iter)
+
+    try:
+        first_row = next(row_iter)
+    except StopIteration:
+        log.error('No rows in row iterator... stopping, no write made.')
+
     # If rows are passed as iterable of sequences, each row must be an
     # in-memory sequence like a list, tuple, or pvector (i.e. not an
     # iter or generator), otherwise, this will have the
