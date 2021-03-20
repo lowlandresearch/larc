@@ -196,36 +196,37 @@ class IdResourceEndpoint(Endpoint):
 
         super().__init__(parent.api, parent.parts + (data[id_key],))
 
-    @classmethod
-    @curry
-    def from_multiple_response(cls, parent: Endpoint,
-                               response: requests.Response, *,
-                               form_key=None, id_key='id',
-                               meta_f=empty_dict,
-                               unpack_f=do_nothing,
-                               single_unpack_f=do_nothing):
-        for d in unpack_f(response.json()):
-            yield cls(parent, d, form_key, id_key, meta_f=meta_f,
-                      unpack_f=unpack_f, single_unpack_f=single_unpack_f)
-
-    @classmethod
-    @curry
-    def from_single_response(cls, parent: Endpoint,
-                             response: requests.Response, *,
-                             form_key=None, id_key='id',
-                             meta_f=do_nothing,
-                             unpack_f=do_nothing,
-                             single_unpack_f=do_nothing):
-        data = unpack_f(response.json())
-        return cls(parent, data, form_key, id_key, meta_f=meta_f,
-                   unpack_f=unpack_f, single_unpack_f=single_unpack_f)
-
     def refresh(self, **get_kw):
         return IdResourceEndpoint(
             self.parent, self.single_unpack_f(self.get(**get_kw).json()),
             self.form_key, self.id_key, meta_f=self.meta_f,
             unpack_f=self.unpack_f, single_unpack_f=self.single_unpack_f,
         )
+
+
+@curry
+def from_multiple_response(parent: Endpoint, response: requests.Response, *,
+                           form_key=None, id_key='id',
+                           meta_f=empty_dict,
+                           unpack_f=do_nothing,
+                           single_unpack_f=do_nothing):
+    for d in unpack_f(response.json()):
+        yield IdResourceEndpoint(
+            parent, d, form_key, id_key, meta_f=meta_f,
+            unpack_f=unpack_f, single_unpack_f=single_unpack_f
+        )
+
+@curry
+def from_single_response(parent: Endpoint, response: requests.Response, *,
+                         form_key=None, id_key='id',
+                         meta_f=do_nothing,
+                         unpack_f=do_nothing,
+                         single_unpack_f=do_nothing):
+    data = unpack_f(response.json())
+    return IdResourceEndpoint(
+        parent, data, form_key, id_key, meta_f=meta_f,
+        unpack_f=unpack_f, single_unpack_f=single_unpack_f
+    )
 
 @curry
 def update_endpoint(endpoint: IdResourceEndpoint, update: dict, *,
@@ -320,7 +321,7 @@ def get_id_resource(resource_name: str, *,
     def getter(parent_endpoint: IdResourceEndpoint, id: (int, str), **get_kw):
         return pipe(
             parent_endpoint(resource_name, id).get(**get_kw),
-            IdResourceEndpoint.from_single_response(
+            from_single_response(
                 parent_endpoint(resource_name),
                 form_key=form_key, id_key=id_key, unpack_f=unpack_f,
                 meta_f=meta_f, single_unpack_f=single_unpack_f,
@@ -343,7 +344,7 @@ def get_id_resources(resource_name: str, *, form_key: str = None,
             parent_endpoint(resource_name).iter(
                 'get', **merge(
                     {'iter_f': compose(
-                        IdResourceEndpoint.from_multiple_response(
+                        from_multiple_response(
                             form_key=form_key, id_key=id_key,
                             meta_f=meta_f, unpack_f=unpack_f,
                             single_unpack_f=single_unpack_f,
