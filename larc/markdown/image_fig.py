@@ -1,6 +1,6 @@
 
 from markdown.extensions import Extension
-from markdown.util import etree
+import xml.etree.ElementTree as etree
 from markdown.inlinepatterns import LinkInlineProcessor, IMAGE_LINK_RE
 from markdown.extensions.attr_list import AttrListTreeprocessor
 import re
