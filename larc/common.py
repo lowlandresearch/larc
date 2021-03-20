@@ -825,6 +825,9 @@ def csv_rows_to_fp(wfp, rows: Iterable[Union[dict, Sequence[str]]], *,
     ... )
     >>> assert wfp.getvalue() == '1,2\r\n3,4\r\n'
 
+    >>> wfp = io.StringIO()
+    >>> pipe([], csv_rows_to_fp(wfp))
+    >>> assert wfp.getvalue() == ''
     '''
     
     row_iter = iter(rows)
@@ -833,6 +836,7 @@ def csv_rows_to_fp(wfp, rows: Iterable[Union[dict, Sequence[str]]], *,
         first_row = next(row_iter)
     except StopIteration:
         log.error('No rows in row iterator... stopping, no write made.')
+        return
 
     # If rows are passed as iterable of sequences, each row must be an
     # in-memory sequence like a list, tuple, or pvector (i.e. not an
