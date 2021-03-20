@@ -1159,6 +1159,9 @@ def vmapif(func, seq):
 
 @curry
 def groupdicts(regex, iterable, keep_match=False, **kw):
+    '''Given a regex (str or re.Pattern), and iterable of strings, 
+    produce single dictionary of all groupdicts of matches
+    '''
     regex = regex if isinstance(regex, re.Pattern) else re.compile(regex, **kw)
     return pipe(
         iterable,
@@ -1172,6 +1175,9 @@ def groupdicts(regex, iterable, keep_match=False, **kw):
 @curry
 def groupdicts_from_regexes(regexes: Sequence[re.Pattern],
                             iterable: Iterable[str], **kw):
+    '''Given a sequence of regexes and an iterable of strings,
+    produce a list of merged groupdicts for those regexes
+    '''
     return pipe(
         iterable,
         juxt(*[compose(list, groupdicts(r, **kw)) for r in regexes]),

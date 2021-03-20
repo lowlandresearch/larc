@@ -2,7 +2,7 @@ import toolz.curried as _
 import markdown as _markdown
 
 from . import (
-    meta_yaml, card, table, yaml_data,
+    meta_yaml, card, table, yaml_data, image_fig,
 )
 
 @_.curry
