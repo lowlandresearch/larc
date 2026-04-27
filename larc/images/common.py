@@ -3,8 +3,8 @@ import logging
 from functools import wraps
 from pathlib import Path
 import typing as T
+import importlib.resources
 
-from pkg_resources import resource_filename
 import toolz.curried as _
 from multipledispatch import dispatch
 from PIL import (
@@ -21,6 +21,9 @@ log = new_log(__name__)
 BLUE = (87, 116, 160, 255)
 BLUE2 = (100, 140, 200, 255)
 GREY = (100, 100, 100, 255)
+
+def resource_filename(context, path):
+    return importlib.resources.files(context, path)
 
 @dispatch((str, Path))
 def jpeg_bytes(path: T.Union[str, Path]):
